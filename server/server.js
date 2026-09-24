@@ -31,19 +31,22 @@ const app = express();
 // Middleware
 // ===============================
 
+// CORS enabled for local development, production, and Netlify deploys
 app.use(
   cors({
-    origin: [
-      "http://localhost:5173",
-      "http://localhost:3000",
-    ],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl) or matching origins
+      if (!origin || origin.includes("localhost") || origin.endsWith(".netlify.app")) {
+        return callback(null, true);
+      }
+      return callback(null, true); // Production mein safe allow-all for testing
+    },
     credentials: true,
   })
 );
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
 // ===============================
 // Basic Test Route
@@ -75,8 +78,6 @@ app.use("/api/analytics", analyticsRoutes);
 app.use("/api/settings", settingRoutes);
 app.use("/api/ai", aiRoutes);
 
-
-
 // ===============================
 // 404 Handler
 // ===============================
@@ -105,7 +106,7 @@ app.use((err, req, res, next) => {
 // MongoDB Connection & Server Start
 // ===============================
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 8080;
 
 const connectDB = async () => {
   try {
@@ -121,8 +122,9 @@ const connectDB = async () => {
 
     console.log("MongoDB connected successfully");
 
-    app.listen(PORT, () => {
-      console.log(`Server running on http://localhost:${PORT}`);
+    // '0.0.0.0' allows external traffic from Railway proxy/public domain
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`Server running on port ${PORT}`);
     });
   } catch (error) {
     console.error("Database connection failed:");
@@ -133,5 +135,3 @@ const connectDB = async () => {
 };
 
 connectDB();
-
-
