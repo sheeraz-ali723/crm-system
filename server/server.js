@@ -2,7 +2,9 @@
 const mongoose = require("mongoose");
 const cors = require("cors");
 const dotenv = require("dotenv");
-const dns = require("dns");
+
+dotenv.config();
+
 const productRoutes = require("./routes/productRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const invoiceRoutes = require("./routes/invoiceRoutes");
@@ -13,13 +15,6 @@ const dashboardRoutes = require("./routes/dashboardRoutes");
 const analyticsRoutes = require("./routes/analyticsRoutes");
 const settingRoutes = require("./routes/settingRoutes");
 const aiRoutes = require("./routes/aiRoutes");
-
-// Force Google Public DNS to resolve MongoDB Atlas SRV records
-dns.setServers(["8.8.8.8", "8.8.4.4"]);
-
-dotenv.config();
-
-// Routes
 const authRoutes = require("./routes/authRoutes");
 const customerRoutes = require("./routes/customerRoutes");
 const leadRoutes = require("./routes/leadRoutes");
@@ -31,15 +26,13 @@ const app = express();
 // Middleware
 // ===============================
 
-// CORS enabled for local development, production, and Netlify deploys
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like mobile apps or curl) or matching origins
       if (!origin || origin.includes("localhost") || origin.endsWith(".netlify.app")) {
         return callback(null, true);
       }
-      return callback(null, true); // Production mein safe allow-all for testing
+      return callback(null, true);
     },
     credentials: true,
   })
@@ -47,6 +40,47 @@ app.use(
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+// ===============================
+// MongoDB Cached Connection
+// ===============================
+
+const mongoUri = process.env.MONGO_URI || process.env.MONGODB_URI;
+
+let cached = global._mongooseCache;
+if (!cached) {
+  cached = global._mongooseCache = { conn: null, promise: null };
+}
+
+const connectDB = async () => {
+  if (!mongoUri) {
+    throw new Error("MONGO_URI or MONGODB_URI is not configured in environment variables");
+  }
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET is not configured in environment variables");
+  }
+
+  if (cached.conn) {
+    return cached.conn;
+  }
+
+  if (!cached.promise) {
+    cached.promise = mongoose.connect(mongoUri).then((m) => m);
+  }
+
+  cached.conn = await cached.promise;
+  return cached.conn;
+};
+
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    console.error("Database connection error:", error.message);
+    next(error);
+  }
+});
 
 // ===============================
 // Basic Test Route
@@ -103,35 +137,22 @@ app.use((err, req, res, next) => {
 });
 
 // ===============================
-// MongoDB Connection & Server Start
+// Local / Non-Vercel Server Start
 // ===============================
 
-const PORT = process.env.PORT || 8080;
+module.exports = app;
 
-const connectDB = async () => {
-  try {
-    if (!process.env.MONGO_URI) {
-      throw new Error("MONGO_URI is not configured in .env");
-    }
-
-    if (!process.env.JWT_SECRET) {
-      throw new Error("JWT_SECRET is not configured in .env");
-    }
-
-    await mongoose.connect(process.env.MONGO_URI);
-
-    console.log("MongoDB connected successfully");
-
-    // '0.0.0.0' allows external traffic from Railway proxy/public domain
-    app.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running on port ${PORT}`);
+if (!process.env.VERCEL) {
+  const PORT = process.env.PORT || 8080;
+  connectDB()
+    .then(() => {
+      console.log("MongoDB connected successfully");
+      app.listen(PORT, "0.0.0.0", () => {
+        console.log(`Server running on port ${PORT}`);
+      });
+    })
+    .catch((error) => {
+      console.error("Database connection failed:", error.message);
+      process.exit(1);
     });
-  } catch (error) {
-    console.error("Database connection failed:");
-    console.error(error.message);
-
-    process.exit(1);
-  }
-};
-
-connectDB();
+}

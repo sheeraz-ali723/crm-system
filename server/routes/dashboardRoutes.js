@@ -24,10 +24,10 @@ router.get("/stats", async (req, res) => {
 
       Deal.find().sort({ createdAt: -1 }),
 
-      // Get ALL orders for dashboard calculations
+      // Get ALL orders for correct revenue/count calculations
       Order.find().sort({ createdAt: -1 }),
 
-      // Only latest 5 orders for Recent Orders section
+      // Only latest 5 for dashboard table
       Order.find().sort({ createdAt: -1 }).limit(5),
 
       Invoice.find(),
@@ -42,8 +42,10 @@ router.get("/stats", async (req, res) => {
     // =========================================================
     // REVENUE
     // =========================================================
-    // Count all non-cancelled orders as confirmed order revenue.
-    // This includes Pending, Processing, Shipped and Delivered.
+    // Count all non-cancelled orders as revenue.
+    //
+    // This means Delivered, Shipped, Processing and Pending
+    // orders are included. Cancelled orders are excluded.
     const orderRevenue = allOrders
       .filter((order) => order.status !== "Cancelled")
       .reduce(
@@ -59,11 +61,10 @@ router.get("/stats", async (req, res) => {
         0
       );
 
-    // Dashboard revenue
     const totalRevenue = orderRevenue + paidInvoicesRevenue;
 
     // =========================================================
-    // DEAL PIPELINE
+    // PIPELINE VALUE
     // =========================================================
     const pipelineValue = deals
       .filter((deal) => deal.stage !== "Closed Lost")
@@ -72,6 +73,9 @@ router.get("/stats", async (req, res) => {
         0
       );
 
+    // =========================================================
+    // DEAL COUNTS
+    // =========================================================
     const wonDealsCount = deals.filter(
       (deal) => deal.stage === "Closed Won"
     ).length;
